@@ -138,6 +138,39 @@ describe('execScripts', () => {
 		}
 	});
 
+	it('should support exec multiple scripts in right order', async () => {
+		const spyInstance = jest.spyOn(console, 'log');
+		spyInstance.mockImplementation(jest.fn());
+
+		const fetch = async () => ({
+			text: async () => 'window.foo = 2;',
+		});
+
+		const scripts = [
+			'./multiFoo.js',
+			'<script>window.foo = window.foo + window.bar</script>',
+			'<script>console.log(window.foo)</script>',
+		]
+
+		const dummyContext = {
+			foo: 6,
+			bar: 5
+		};
+
+		try {
+			// act
+			await execScripts(null, scripts, dummyContext, {
+				fetch,
+			});
+
+			// assert
+			expect(spyInstance).toHaveBeenCalledTimes(1);
+			expect(spyInstance).toHaveBeenCalledWith(7);
+		} finally {
+			spyInstance.mockRestore();
+		}
+	});
+	
 	it('should support exec script with importEntry correctly(html url)', async () => {
 		// arrange
 		const spyInstance = jest.spyOn(console, 'log');

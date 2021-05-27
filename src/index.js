@@ -78,10 +78,8 @@ export function getExternalStyleSheets(styles, fetch = defaultFetch) {
 	));
 }
 
-// for prefetch
-export function getExternalScripts(scripts, fetch = defaultFetch, errorCallback = () => {
-}) {
-
+function fetchScriptsList(scripts, fetch = defaultFetch, errorCallback = () => {
+}, handleContent) {
 	const fetchScript = scriptUrl => scriptCache[scriptUrl] ||
 		(scriptCache[scriptUrl] = fetch(scriptUrl).then(response => {
 			// usually browser treats 4xx and 5xx response of script loading as an error and will fire a script error event
@@ -97,31 +95,40 @@ export function getExternalScripts(scripts, fetch = defaultFetch, errorCallback 
 			throw e;
 		}));
 
-	return Promise.all(scripts.map(script => {
+	function handleReturn(content, index) {
+		const contentPromise = Promise.resolve(content);
+		return handleContent ? contentPromise.then((res) => handleContent(res, index)) : content;
+	}
 
-			if (typeof script === 'string') {
-				if (isInlineCode(script)) {
-					// if it is inline script
-					return getInlineCode(script);
-				} else {
-					// external script
-					return fetchScript(script);
-				}
+	return scripts.map((script, index) => {
+		if (typeof script === 'string') {
+			if (isInlineCode(script)) {
+				// if it is inline script
+				return handleReturn(getInlineCode(script), index);
 			} else {
-				// use idle time to load async script
-				const { src, async } = script;
-				if (async) {
-					return {
-						src,
-						async: true,
-						content: new Promise((resolve, reject) => requestIdleCallback(() => fetchScript(src).then(resolve, reject))),
-					};
-				}
-
-				return fetchScript(src);
+				// external script
+				return handleReturn(fetchScript(script), index);
 			}
-		},
-	));
+		} else {
+			// use idle time to load async script
+			const { src, async } = script;
+			if (async) {
+				return handleReturn({
+					src,
+					async: true,
+					content: new Promise((resolve, reject) => requestIdleCallback(() => fetchScript(src).then(resolve, reject))),
+				}, index);
+			}
+
+			return handleReturn(fetchScript(src), index);
+		}
+	});
+}
+
+// for prefetch
+export function getExternalScripts(scripts, fetch = defaultFetch, errorCallback = () => {
+}) {
+	return Promise.all(fetchScriptsList(scripts, fetch, errorCallback));
 }
 
 function throwNonBlockingError(error, msg) {
@@ -154,84 +161,105 @@ export function execScripts(entry, scripts, proxy = window, opts = {}) {
 		},
 	} = opts;
 
-	return getExternalScripts(scripts, fetch, error)
-		.then(scriptsText => {
+	const geval = (scriptSrc, inlineScript) => {
+		const rawCode = beforeExec(inlineScript, scriptSrc) || inlineScript;
+		const code = getExecutableScript(scriptSrc, rawCode, proxy, strictGlobal);
 
-			const geval = (scriptSrc, inlineScript) => {
-				const rawCode = beforeExec(inlineScript, scriptSrc) || inlineScript;
-				const code = getExecutableScript(scriptSrc, rawCode, proxy, strictGlobal);
+		(0, eval)(code);
 
-				(0, eval)(code);
+		afterExec(inlineScript, scriptSrc);
+	};
 
-				afterExec(inlineScript, scriptSrc);
-			};
+	function exec(scriptSrc, inlineScript, resolve) {
 
-			function exec(scriptSrc, inlineScript, resolve) {
+		const markName = `Evaluating script ${scriptSrc}`;
+		const measureName = `Evaluating Time Consuming: ${scriptSrc}`;
 
-				const markName = `Evaluating script ${scriptSrc}`;
-				const measureName = `Evaluating Time Consuming: ${scriptSrc}`;
+		if (process.env.NODE_ENV === 'development' && supportsUserTiming) {
+			performance.mark(markName);
+		}
 
-				if (process.env.NODE_ENV === 'development' && supportsUserTiming) {
-					performance.mark(markName);
-				}
+		if (scriptSrc === entry) {
+			noteGlobalProps(strictGlobal ? proxy : window);
 
-				if (scriptSrc === entry) {
-					noteGlobalProps(strictGlobal ? proxy : window);
-
-					try {
-						// bind window.proxy to change `this` reference in script
-						geval(scriptSrc, inlineScript);
-						const exports = proxy[getGlobalProp(strictGlobal ? proxy : window)] || {};
-						resolve(exports);
-					} catch (e) {
-						// entry error must be thrown to make the promise settled
-						console.error(`[import-html-entry]: error occurs while executing entry script ${scriptSrc}`);
-						throw e;
-					}
-				} else {
-					if (typeof inlineScript === 'string') {
-						try {
-							// bind window.proxy to change `this` reference in script
-							geval(scriptSrc, inlineScript);
-						} catch (e) {
-							// consistent with browser behavior, any independent script evaluation error should not block the others
-							throwNonBlockingError(e, `[import-html-entry]: error occurs while executing normal script ${scriptSrc}`);
-						}
-					} else {
-						// external script marked with async
-						inlineScript.async && inlineScript?.content
-							.then(downloadedScriptText => geval(inlineScript.src, downloadedScriptText))
-							.catch(e => {
-								throwNonBlockingError(e, `[import-html-entry]: error occurs while executing async script ${inlineScript.src}`);
-							});
-					}
-				}
-
-				if (process.env.NODE_ENV === 'development' && supportsUserTiming) {
-					performance.measure(measureName, markName);
-					performance.clearMarks(markName);
-					performance.clearMeasures(measureName);
-				}
+			try {
+				// bind window.proxy to change `this` reference in script
+				geval(scriptSrc, inlineScript);
+				const exports = proxy[getGlobalProp(strictGlobal ? proxy : window)] || {};
+				resolve(exports);
+			} catch (e) {
+				// entry error must be thrown to make the promise settled
+				console.error(`[import-html-entry]: error occurs while executing entry script ${scriptSrc}`);
+				throw e;
 			}
-
-			function schedule(i, resolvePromise) {
-
-				if (i < scripts.length) {
-					const scriptSrc = scripts[i];
-					const inlineScript = scriptsText[i];
-
-					exec(scriptSrc, inlineScript, resolvePromise);
-					// resolve the promise while the last script executed and entry not provided
-					if (!entry && i === scripts.length - 1) {
-						resolvePromise();
-					} else {
-						schedule(i + 1, resolvePromise);
-					}
+		} else {
+			if (typeof inlineScript === 'string') {
+				try {
+					// bind window.proxy to change `this` reference in script
+					geval(scriptSrc, inlineScript);
+				} catch (e) {
+					// consistent with browser behavior, any independent script evaluation error should not block the others
+					throwNonBlockingError(e, `[import-html-entry]: error occurs while executing normal script ${scriptSrc}`);
 				}
+			} else {
+				// external script marked with async
+				inlineScript.async && inlineScript?.content
+					.then(downloadedScriptText => geval(inlineScript.src, downloadedScriptText))
+					.catch(e => {
+						throwNonBlockingError(e, `[import-html-entry]: error occurs while executing async script ${inlineScript.src}`);
+					});
 			}
+		}
 
-			return new Promise(resolve => schedule(0, success || resolve));
-		});
+		if (process.env.NODE_ENV === 'development' && supportsUserTiming) {
+			performance.measure(measureName, markName);
+			performance.clearMarks(markName);
+			performance.clearMeasures(measureName);
+		}
+	}
+
+    const scriptsText = [];
+    const isScriptExecuted = [];
+    function canExec(index) {
+		if (isScriptExecuted[index]) return false;
+		
+        let flag = true;
+        index--;
+        while (index >= 0) {
+            if (!isScriptExecuted[index]) {
+                flag = false;
+            }
+            index--;
+        }
+        return flag;
+	}
+	
+	function schedule(i, resolvePromise) {
+        if (i < scripts.length) {
+            if (!canExec(i)) return;
+
+            const scriptSrc = scripts[i];
+            const inlineScript = scriptsText[i];
+
+            isScriptExecuted[i] = true;
+            exec(scriptSrc, inlineScript, resolvePromise);
+            // resolve the promise while the last script executed and entry not provided
+            if (!entry && i === scripts.length - 1) {
+                resolvePromise();
+            } else if (scriptsText[i + 1]) {
+                schedule(i + 1, resolvePromise);
+            }
+        }
+	}
+	
+	return new Promise((resolve) => {
+        function execScriptContent(content, index) {
+            scriptsText[index] = content;
+            schedule(index, success || resolve);
+        }
+
+        fetchScriptsList(scripts, fetch, error, execScriptContent);
+    });
 }
 
 export default function importHTML(url, opts = {}) {
