@@ -37,7 +37,7 @@ describe('execScripts', () => {
 			hello: 'world',
 		};
 
-		const expectCode = 'console.log(this.foo, window.foo)';
+		const expectCode = 'console.log("updated")';
 		const script = `<script>${expectCode}</script>`;
 
 		try {

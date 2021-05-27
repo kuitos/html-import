@@ -1,5 +1,5 @@
 import iconv from 'iconv-lite';
-import { defaultGetPublicPath, readResAsString } from '../utils';
+import { defaultGetPublicPath, readResAsString, evalCode } from '../utils';
 
 describe('utils', () => {
 	it('defaultGetPublicPath', () => {
@@ -133,6 +133,72 @@ describe('utils', () => {
 			await runner('gb2312', '你好，李磊');
 			await runner('BIG5', '中華人民共和國');
 			await runner('GB18030', '대한민국|中華人民共和國|にっぽんこく、にほんこく');
+		});
+	});
+
+	describe('evalCode', () => {
+
+		it ('should eval script correctly', () => {
+			const logSpyInstance = jest.spyOn(console, 'log');
+			logSpyInstance.mockImplementation(jest.fn());
+
+			const expectCode = 'console.log("hello")';
+			const scriptSrc = `<script>${expectCode}</script>`;
+			evalCode(scriptSrc, expectCode);
+
+			expect(logSpyInstance).toHaveBeenCalledTimes(1);
+			expect(logSpyInstance).toHaveBeenCalledWith('hello');
+
+			logSpyInstance.mockRestore();
+		});
+
+		it ('should eval script once but exec code twice when cache hit', () => {
+			const evalSpyInstance = jest.spyOn(window, 'eval');
+			const logSpyInstance = jest.spyOn(console, 'log');
+			logSpyInstance.mockImplementation(jest.fn());
+
+			const expectCode = 'console.log("hello, China")';
+			const scriptSrc1 = `<script>${expectCode}</script>`;
+			const scriptSrc2 = `<script>${expectCode}</script>`;
+
+			evalCode(scriptSrc1, expectCode);
+			evalCode(scriptSrc2, expectCode);
+
+			//use cache, eval once
+			expect(evalSpyInstance).toHaveBeenCalledTimes(1);
+			//exec code twice by cache function
+			expect(logSpyInstance).toHaveBeenCalledTimes(2);
+
+			evalSpyInstance.mockRestore();
+			logSpyInstance.mockRestore();
+		});
+
+		it ('should eval script twice and exec code twice when cache not hit', () => {
+			const evalSpyInstance = jest.spyOn(window, 'eval');
+			const logSpyInstance = jest.spyOn(console, 'log');
+			const infoSpyInstance = jest.spyOn(console, 'info');
+
+			logSpyInstance.mockImplementation(jest.fn());
+			infoSpyInstance.mockImplementation(jest.fn());
+
+			const expectCode1 = 'console.log("hello, friend")';
+			const expectCode2 = 'console.info("hello, friend")';
+
+			const scriptSrc1 = `<script>${expectCode1}</script>`;
+			const scriptSrc2 = `<script>${expectCode2}</script>`;
+
+			evalCode(scriptSrc1, expectCode1);
+			evalCode(scriptSrc2, expectCode2);
+
+			//not use cache, eval twice
+			expect(evalSpyInstance).toHaveBeenCalledTimes(2);
+
+			//exec code by no cache twice
+			expect(logSpyInstance).toHaveBeenCalledTimes(1);
+			expect(infoSpyInstance).toHaveBeenCalledTimes(1);
+
+			evalSpyInstance.mockRestore();
+			logSpyInstance.mockRestore();
 		});
 	});
 });

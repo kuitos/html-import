@@ -7,6 +7,7 @@
 import processTpl, { genLinkReplaceSymbol, genScriptReplaceSymbol } from './process-tpl';
 import {
 	defaultGetPublicPath,
+	evalCode,
 	getGlobalProp,
 	getInlineCode,
 	noteGlobalProps,
@@ -17,6 +18,7 @@ import {
 const styleCache = {};
 const scriptCache = {};
 const embedHTMLCache = {};
+
 if (!window.fetch) {
 	throw new Error('[import-html-entry] Here is no "fetch" on the window env, you need to polyfill it');
 }
@@ -161,7 +163,7 @@ export function execScripts(entry, scripts, proxy = window, opts = {}) {
 				const rawCode = beforeExec(inlineScript, scriptSrc) || inlineScript;
 				const code = getExecutableScript(scriptSrc, rawCode, proxy, strictGlobal);
 
-				(0, eval)(code);
+				evalCode(scriptSrc, code);
 
 				afterExec(inlineScript, scriptSrc);
 			};
