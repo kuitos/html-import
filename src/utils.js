@@ -62,15 +62,17 @@ export function noteGlobalProps(global) {
 	// but this may be faster (pending benchmarks)
 	firstGlobalProp = secondGlobalProp = undefined;
 
-	for (let p in global) {
-		if (shouldSkipProperty(global, p))
-			continue;
-		if (!firstGlobalProp)
-			firstGlobalProp = p;
-		else if (!secondGlobalProp)
-			secondGlobalProp = p;
-		lastGlobalProp = p;
-	}
+	Object
+		.keys(global)
+		.forEach((p) => {
+			if (!shouldSkipProperty(global, p))
+				return;
+			if (!firstGlobalProp)
+				firstGlobalProp = p;
+			else if (!secondGlobalProp)
+				secondGlobalProp = p;
+			lastGlobalProp = p;
+		});
 
 	return lastGlobalProp;
 }
