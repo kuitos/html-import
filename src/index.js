@@ -168,6 +168,18 @@ export function execScripts(entry, scripts, proxy = window, opts = {}) {
 
 			function exec(scriptSrc, inlineScript, resolve) {
 
+				const handleEntryScript = (scriptSrc, inlineScript) => {
+					try {
+						geval(scriptSrc, inlineScript);
+						const exports = proxy[getGlobalProp(strictGlobal ? proxy : window)] || {};
+						resolve(exports);
+					} catch (e) {
+						// entry error must be thrown to make the promise settled
+						console.error(`[import-html-entry]: error occurs while executing entry script ${scriptSrc}`);
+						throw e;
+					}
+				};
+
 				const markName = `Evaluating script ${scriptSrc}`;
 				const measureName = `Evaluating Time Consuming: ${scriptSrc}`;
 
@@ -178,15 +190,12 @@ export function execScripts(entry, scripts, proxy = window, opts = {}) {
 				if (scriptSrc === entry) {
 					noteGlobalProps(strictGlobal ? proxy : window);
 
-					try {
-						// bind window.proxy to change `this` reference in script
-						geval(scriptSrc, inlineScript);
-						const exports = proxy[getGlobalProp(strictGlobal ? proxy : window)] || {};
-						resolve(exports);
-					} catch (e) {
-						// entry error must be thrown to make the promise settled
-						console.error(`[import-html-entry]: error occurs while executing entry script ${scriptSrc}`);
-						throw e;
+					// bind window.proxy to change `this` reference in script
+					if (typeof inlineScript === 'string') {
+						handleEntryScript(scriptSrc, inlineScript);
+					} else {
+						inlineScript.async && inlineScript?.content
+							.then(downloadedScriptText => handleEntryScript(inlineScript.src, downloadedScriptText))
 					}
 				} else {
 					if (typeof inlineScript === 'string') {

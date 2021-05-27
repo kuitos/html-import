@@ -93,6 +93,39 @@ describe('execScripts', () => {
 		}
 	});
 
+	it('should support exec remote async entry script correctly', async () => {
+		// arrange
+		const spyInstance = jest.spyOn(console, 'log');
+		spyInstance.mockImplementation(jest.fn());
+
+		const fetch = async () => ({
+			text: async () => 'console.log(window.foo)',
+		});
+
+		const scriptObject = {
+			src: './foo.js',
+			async: true,
+			content: Promise.resolve()
+		};
+
+		const dummyContext = {
+			foo: 6,
+		};
+
+		try {
+			// act
+			await execScripts(scriptObject, [scriptObject], dummyContext, {
+				fetch,
+			});
+
+			// assert
+			expect(spyInstance).toHaveBeenCalledTimes(1);
+			expect(spyInstance).toHaveBeenCalledWith(6);
+		} finally {
+			spyInstance.mockRestore();
+		}
+	});
+
 	it('should support exec remote script with hooks correctly', async () => {
 		// arrange
 		const spyInstance = jest.spyOn(console, 'log');
