@@ -4,7 +4,7 @@
  * @since 2018-08-15 11:37
  */
 
-import processTpl, { genLinkReplaceSymbol, genScriptReplaceSymbol } from './process-tpl';
+import processTpl, { genLinkReplaceSymbol, genScriptReplaceSymbol, processCssContent } from './process-tpl';
 import {
 	defaultGetPublicPath,
 	getGlobalProp,
@@ -40,7 +40,8 @@ function getEmbedHTML(template, styles, opts = {}) {
 	return getExternalStyleSheets(styles, fetch)
 		.then(styleSheets => {
 			embedHTML = styles.reduce((html, styleSrc, i) => {
-				html = html.replace(genLinkReplaceSymbol(styleSrc), `<style>/* ${styleSrc} */${styleSheets[i]}</style>`);
+				const styleText = processCssContent(styleSrc, styleSheets[i]);
+				html = html.replace(genLinkReplaceSymbol(styleSrc), `<style>/* ${styleSrc} */${styleText}</style>`);
 				return html;
 			}, embedHTML);
 			return embedHTML;

@@ -30,7 +30,13 @@ function hasProtocol(url) {
 }
 
 function getEntirePath(path, baseURI) {
-	return new URL(path, baseURI).toString();
+	// 防止new URL(path, '//xxx...')这种形式报错: Invalid base URL
+	// by daniel@2021-06-22
+	let newBaseURI = baseURI;
+	if (baseURI.indexOf('//') === 0) {
+		newBaseURI = 'http:' + baseURI;
+	}
+	return new URL(path, newBaseURI).toString();
 }
 
 function isValidJavaScriptType(type) {
@@ -43,7 +49,32 @@ export const genScriptReplaceSymbol = (scriptSrc, async = false) => `<!-- ${asyn
 export const inlineScriptReplaceSymbol = `<!-- inline scripts replaced by import-html-entry -->`;
 export const genIgnoreAssetReplaceSymbol = url => `<!-- ignore asset ${url || 'file'} replaced by import-html-entry -->`;
 export const genModuleScriptReplaceSymbol = (scriptSrc, moduleSupport) => `<!-- ${moduleSupport ? 'nomodule' : 'module'} script ${scriptSrc} ignored by import-html-entry -->`;
+/**
+ * process the css content, transform the relative url in external css to absolute path.
+ * 
+ * @author Daniel
+ * @since 2021-06-22
+ * @param {string} styleSrc the external css link
+ * @param {string} styleText the fetched css content
+ * @returns 
+ */
+ export const processCssContent = (styleSrc, styleText) => {
+	const replacement = function (match, prefix, path, suffix) {
+		if (hasProtocol(path)) {
+			return match;
+		}
 
+		const newHref = getEntirePath(path, styleSrc);
+		return prefix + newHref + suffix;
+	};
+	
+	const transformedStyleText = styleText
+		.replace(/(@import\s*['"])([^'"]+)(['"])/g, replacement) // transform leading `@import 'xxx.css'`
+		.replace(/(url\(\s*['"]?)([^'"\s\(\)]+)(['"]?\s*\))/g, replacement) // transform `url(xxx.jpg)`
+		.replace(/(\/[*\/][@#] sourceMappingURL=)(\S+)(( \*\/)?[\r\n]*)$/mg, replacement); // transform trailing `sourceMappingURL=xxx.map`
+	
+	return transformedStyleText;
+};
 /**
  * parse the script link from the template
  * 1. collect stylesheets

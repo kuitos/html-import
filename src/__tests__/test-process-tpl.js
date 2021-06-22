@@ -4,6 +4,7 @@ import processTpl, {
 	genLinkReplaceSymbol,
 	genModuleScriptReplaceSymbol,
 	genScriptReplaceSymbol,
+	processCssContent,
 } from '../process-tpl';
 
 test('test process-tpl', () => {
@@ -317,4 +318,27 @@ test('should work with huge html content', () => {
 	processTpl(hugeHtmlContent, '//test.com');
 	const during = Date.now() - start;
 	expect(during < 1000).toBeTruthy();
+});
+
+test('test process url in external css resources', () => {
+	const transformedStyleText = processCssContent('//cdntest.com/css/ui.css', `
+		@import 'component1.css'
+		@import url('component2.less')
+		.test-notice {
+			background: #ffffff url(../images/bg1.jpg) no-repeat center left;
+			background-image: url( '../images/bg2.jpg' );
+			background-image: url("../images/bg3.jpg");
+			background-image: url("//test.com/images/bg4.jpg");
+			background-image: url("http://test.com/images/bg5.jpg");
+		};
+		/*# sourceMappingURL=test-notice.css.map */
+	`);
+	expect(transformedStyleText.indexOf('//cdntest.com/css/component1.css') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/css/component2.less') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/images/bg1.jpg') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/images/bg2.jpg') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/images/bg3.jpg') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//test.com/images/bg4.jpg') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('http://test.com/images/bg5.jpg') !== -1).toBeTruthy();
+	expect(transformedStyleText.indexOf('//cdntest.com/css/test-notice.css.map') !== -1).toBeTruthy();
 });
